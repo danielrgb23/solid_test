@@ -1,0 +1,67 @@
+.login-container {
+  display: flex;
+    max-width: 500px;
+    margin: 0 auto;
+    padding: 20px;
+    align-content: center;
+  }
+  
+  .login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  
+  .providers-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 15px;
+  }
+  
+  .provider-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 15px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+  
+  .provider-option.selected {
+    border-color: #007bff;
+    background-color: #f8f9fa;
+  }
+  
+  .provider-logo {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+  }
+  
+  .error-message {
+    color: #dc3545;
+    font-size: 14px;
+  }
+  
+  .login-button, .logout-button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    background-color: #007bff;
+    color: white;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
+  
+  .login-button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+  }
+  
+  .user-info {
+    padding: 20px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+  }
