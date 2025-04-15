@@ -18,5 +18,11 @@ export const SOLID_PROVIDERS: Provider[] = [
     name: 'Solid Community',
     url: 'https://solid.community',
     logo: 'solid-logo.png'
+  },
+  {
+    id: 'community-solid-server',
+    name: 'Community Solid Server',
+    url: 'https://solid-dev.itsnoon.net',
+    logo: ''
   }
 ];
