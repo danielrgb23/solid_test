@@ -11,8 +11,6 @@ import {
   buildThing,
   createThing,
   setThing,
-  getSourceUrl,
-  getThing,
 } from '@inrupt/solid-client';
 import '../styles/dashboard.css';
 
