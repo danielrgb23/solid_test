@@ -1,11 +1,9 @@
-// src/App.tsx
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './context/auth_context';
-import PrivateRoute from './components/private_route';
-import PublicRoute from './components/public_route';
+import { AuthProvider } from './contexts/auth_context';
 import LoginComponent from './components/login_component';
 import Dashboard from './components/dashboard';
+import PrivateRoute from './components/private_route';
 import './App.css';
 
 const App: React.FC = () => {
@@ -13,20 +11,8 @@ const App: React.FC = () => {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          {/* Redireciona a rota raiz para login */}
           <Route path="/" element={<Navigate to="/login" replace />} />
-
-          {/* Rota pública - Login */}
-          <Route
-            path="/login"
-            element={
-              <PublicRoute>
-                <LoginComponent />
-              </PublicRoute>
-            }
-          />
-
-          {/* Rota privada - Dashboard */}
+          <Route path="/login" element={<LoginComponent />} />
           <Route
             path="/dashboard"
             element={
@@ -35,9 +21,6 @@ const App: React.FC = () => {
               </PrivateRoute>
             }
           />
-
-          {/* Rota 404 - Redireciona para login */}
-          <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

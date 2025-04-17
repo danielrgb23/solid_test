@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/auth_context';
+import { useAuth } from '../contexts/auth_context';
 import { SOLID_PROVIDERS } from '../constants/providers';
 import { Provider } from '../types/auth';
+import '../styles/login.css';
 
 const LoginComponent: React.FC = () => {
-  const { session, login, logout } = useAuth();
+  const { session, login } = useAuth();
   const navigate = useNavigate();
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
-  const [error, setError] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    // Redireciona para o dashboard se já estiver logado
     if (session.isLoggedIn) {
       navigate('/dashboard');
     }
@@ -23,58 +24,57 @@ const LoginComponent: React.FC = () => {
       return;
     }
 
+    setError(null);
+    setIsLoading(true);
+
     try {
-      setError('');
       await login(selectedProvider);
-      // O redirecionamento acontecerá automaticamente pelo useEffect
     } catch (err) {
       setError('Failed to login. Please try again.');
+      setIsLoading(false);
     }
   };
 
   return (
     <div className="login-container">
-      {!session.isLoggedIn ? (
-        <div className="login-form">
-          <h2>Choose your SOLID Provider</h2>
-          <div className="providers-list">
-            {SOLID_PROVIDERS.map((provider) => (
-              <div
-                key={provider.id}
-                className={`provider-option ${selectedProvider?.id === provider.id ? 'selected' : ''}`}
-                onClick={() => setSelectedProvider(provider)}
-              >
-                {provider.logo && (
-                  <img
-                    src={provider.logo}
-                    alt={provider.name}
-                    className="provider-logo"
-                  />
-                )}
-                <span>{provider.name}</span>
-              </div>
-            ))}
+      <div className="login-card">
+        <h1>SOLID POD Explorer</h1>
+        <p className="subtitle">Select your identity provider to continue</p>
+
+        <div className="providers-grid">
+          {SOLID_PROVIDERS.map((provider) => (
+            <button
+              key={provider.id}
+              className={`provider-button ${selectedProvider?.id === provider.id ? 'selected' : ''}`}
+              onClick={() => setSelectedProvider(provider)}
+              disabled={isLoading}
+            >
+              {provider.logo && (
+                <img 
+                  src={provider.logo} 
+                  alt={provider.name} 
+                  className="provider-logo"
+                />
+              )}
+              <span>{provider.name}</span>
+            </button>
+          ))}
+        </div>
+
+        {error && (
+          <div className="error-message">
+            {error}
           </div>
-          
-          {error && <div className="error-message">{error}</div>}
-          
-          <button
-            onClick={handleLogin}
-            disabled={!selectedProvider}
-            className="login-button"
-          >
-            Login with {selectedProvider?.name || 'SOLID'}
-          </button>
-        </div>
-      ) : (
-        <div className="user-info">
-          <p>Logged in as: {session.webId}</p>
-          <p>Provider: {session.provider?.name}</p>
-          <button onClick={logout} className="logout-button">
-            Log out
-          </button>
-        </div>
-      )}
+        )}
+
+        <button
+          className="login-button"
+          onClick={handleLogin}
+          disabled={!selectedProvider || isLoading}
+        >
+          {isLoading ? 'Logging in...' : 'Login'}
+        </button>
+      </div>
     </div>
   );
 };

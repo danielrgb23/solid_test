@@ -3,23 +3,23 @@ import {
   handleIncomingRedirect,
   getDefaultSession,
   login as solidLogin,
+  fetch as solidFetch,
+  Session
 } from "@inrupt/solid-client-authn-browser";
-import { AuthSession, Provider } from '../types/auth';
-import '../styles/login.css'
-
-interface AuthContextType {
-  session: AuthSession;
-  login: (provider: Provider) => Promise<void>;
-  logout: () => Promise<void>;
-}
+import { AuthSession, AuthContextType, Provider } from '../types/auth';
 
 const initialSession: AuthSession = {
   isLoggedIn: false,
   webId: null,
-  provider: null
+  provider: null,
+  fetch: undefined
 };
 
-const AuthContext = createContext<AuthContextType>({} as AuthContextType);
+const AuthContext = createContext<AuthContextType>({
+  session: initialSession,
+  login: async () => {},
+  logout: async () => {}
+});
 
 interface AuthProviderProps {
   children: React.ReactNode;
@@ -28,41 +28,56 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [session, setSession] = useState<AuthSession>(initialSession);
 
+  const handleSession = (solidSession: Session) => {
+    setSession({
+      isLoggedIn: solidSession.info.isLoggedIn,
+      webId: solidSession.info.webId,
+      provider: session.provider,
+      fetch: solidSession.fetch
+    });
+  };
+
   useEffect(() => {
+    // Restaurar sessão anterior ou lidar com redirecionamento após login
     handleIncomingRedirect({
       restorePreviousSession: true
     }).then((info) => {
       if (info?.webId) {
-        setSession(prev => ({
-          ...prev,
-          isLoggedIn: true,
-          webId: info.webId || null,
-        }));
+        const solidSession = getDefaultSession();
+        handleSession(solidSession);
       }
     });
   }, []);
 
   const login = async (provider: Provider): Promise<void> => {
     try {
-      await solidLogin({
-        oidcIssuer: provider.url,
-        redirectUrl: window.location.href,
-        clientName: "Your App Name"
-      });
+      // Atualiza o provedor antes do redirecionamento
       setSession(prev => ({
         ...prev,
         provider
       }));
+
+      await solidLogin({
+        oidcIssuer: provider.url,
+        redirectUrl: window.location.href,
+        clientName: "SOLID POD Explorer"
+      });
     } catch (error) {
       console.error('Login failed:', error);
+      setSession(initialSession);
       throw error;
     }
   };
 
   const logout = async (): Promise<void> => {
-    const session = getDefaultSession();
-    await session.logout();
-    setSession(initialSession);
+    try {
+      const solidSession = getDefaultSession();
+      await solidSession.logout();
+      setSession(initialSession);
+    } catch (error) {
+      console.error('Logout failed:', error);
+      throw error;
+    }
   };
 
   return (
@@ -72,6 +87,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   );
 };
 
+// Hook personalizado para usar o contexto de autenticação
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
@@ -79,3 +95,5 @@ export const useAuth = () => {
   }
   return context;
 };
+
+export default AuthContext;
