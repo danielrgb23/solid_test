@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/auth_context';
 import {
-  getSolidDataset,
   getContainedResourceUrlAll,
   createContainerAt,
   saveSolidDatasetAt,
@@ -11,6 +10,9 @@ import {
   buildThing,
   createThing,
   setThing,
+  getSolidDataset,
+  getThing,
+  getUrl
 } from '@inrupt/solid-client';
 import '../styles/dashboard.css';
 
@@ -112,43 +114,43 @@ const PropertyRenderer: React.FC<{ name: string; value: string | string[] }> = (
     }
   };
 
-const renderValue = (val: string) => {
-  if (isUrl(val)) {
-    if (val.match(/\.(jpg|jpeg|png|gif)$/i)) {
-      return <img src={val} alt={name} className="property-image" />;
+  const renderValue = (val: string) => {
+    if (isUrl(val)) {
+      if (val.match(/\.(jpg|jpeg|png|gif)$/i)) {
+        return <img src={val} alt={name} className="property-image" />;
+      }
+      return <a href={val} target="_blank" rel="noopener noreferrer">{val}</a>;
     }
-    return <a href={val} target="_blank" rel="noopener noreferrer">{val}</a>;
-  }
-  
-  if (val.includes('XMLSchema#dateTime')) {
-    return formatDate(val);
-  }
 
-  return val;
-};
+    if (val.includes('XMLSchema#dateTime')) {
+      return formatDate(val);
+    }
 
-return (
-  <div className="property-item">
-    <strong>{name}:</strong>
-    <div className="property-value">
-      {Array.isArray(value) ? (
-        <ul>
-          {value.map((val, index) => (
-            <li key={index}>{renderValue(val)}</li>
-          ))}
-        </ul>
-      ) : (
-        renderValue(value)
-      )}
+    return val;
+  };
+
+  return (
+    <div className="property-item">
+      <strong>{name}:</strong>
+      <div className="property-value">
+        {Array.isArray(value) ? (
+          <ul>
+            {value.map((val, index) => (
+              <li key={index}>{renderValue(val)}</li>
+            ))}
+          </ul>
+        ) : (
+          renderValue(value)
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
 };
 
 const FileViewer: React.FC<FileViewerProps> = ({ file, onClose, content }) => {
   const isImage = file.url.match(/\.(jpg|jpeg|png|gif)$/i);
   const isTurtle = content.includes('@prefix') || content.includes('schema.org') || content.includes('<http');
-  
+
   const turtleData = isTurtle ? parseTurtleContent(content) : null;
 
   return (
@@ -199,6 +201,84 @@ const Dashboard: React.FC = () => {
 
   const [openFile, setOpenFile] = useState<{ name: string; url: string } | null>(null);
   const [fileContent, setFileContent] = useState<string>('');
+  const [podInfo, setPodInfo] = useState<PodInfo | null>(null);
+
+  const getPodBaseUrl = async (): Promise<string | null> => {
+    if (!session.webId || !session.fetch) return null;
+  
+    try {
+      // Método 2: Tentar extrair do WebID profile
+      const profileDataset = await getSolidDataset(session.webId, { fetch: session.fetch });
+      const profile = getThing(profileDataset, session.webId);
+      
+      if (profile) {
+        // Tentar diferentes predicados comuns para storage
+        const storage = getUrl(profile, 'http://www.w3.org/ns/pim/space#storage') ||
+                       getUrl(profile, 'http://www.w3.org/ns/solid/terms#storageSpace');
+        
+        if (storage) return storage;
+      }
+  
+      // Método 3: Tentar derivar do WebID
+      // Exemplo: https://username.inrupt.net/profile/card#me -> https://username.inrupt.net/
+      const webIdUrl = new URL(session.webId);
+      const baseUrl = `${webIdUrl.protocol}//${webIdUrl.hostname}/`;
+      
+      // Verificar se o baseUrl é acessível
+      try {
+        await session.fetch(baseUrl);
+        return baseUrl;
+      } catch {
+        // Se não for acessível, não retornar
+      }
+  
+      console.warn('Could not determine POD URL');
+      return null;
+  
+    } catch (error) {
+      console.error('Error getting pod URL:', error);
+      return null;
+    }
+  };
+  
+  // Interface para armazenar informações do POD
+  interface PodInfo {
+    baseUrl: string;
+    provider: string;
+    username: string;
+  }
+  
+  // Função para extrair informações detalhadas do POD
+  const getPodInfo = async (): Promise<PodInfo | null> => {
+    const podUrl = await getPodBaseUrl();
+    if (!podUrl) return null;
+  
+    try {
+      const url = new URL(podUrl);
+      
+      // Determinar o provedor
+      let provider = 'unknown';
+      if (url.hostname.includes('inrupt.com')) {
+        provider = 'Inrupt';
+      } else if (url.hostname.includes('solidcommunity.net')) {
+        provider = 'Solid Community';
+      }
+  
+      // Extrair username do hostname ou path
+      const username = url.hostname.split('.')[0] || 
+                      url.pathname.split('/')[1] || 
+                      'unknown';
+  
+      return {
+        baseUrl: podUrl,
+        provider,
+        username
+      };
+    } catch (error) {
+      console.error('Error parsing pod info:', error);
+      return null;
+    }
+  };
 
   const handleFileOpen = async (item: { name: string; url: string }) => {
     if (!session.fetch) return;
@@ -224,13 +304,23 @@ const Dashboard: React.FC = () => {
     return parts[parts.length - 1] || 'Root';
   };
 
-  const getPodBaseUrl = (): string | null => {
-    if (!session.webId) return null;
+  // const getPodBaseUrl = async (): Promise<string | null> => {
+  //   if (!session.webId || !session.fetch) return null;
 
-    console.log(session.webId)
+  //   try {
+  //     // Obtém todos os storages associados ao WebID
+  //     const storages = await getStorageAll(session.webId, { fetch: session.fetch });
 
-    return 'https://storage.inrupt.com/33bc24fb-1bb8-4d9e-9139-fdf2486999ee/';
-  };
+  //     // Pega o primeiro storage (geralmente é o principal)
+  //     const podUrl = storages[0];
+
+  //     console.log('Pod URL:', podUrl);
+  //     return podUrl;
+  //   } catch (error) {
+  //     console.error('Error getting pod URL:', error);
+  //     return null;
+  //   }
+  // };
 
   const loadFolderContent = async (folderUrl: string) => {
     if (!session.fetch) {
@@ -295,10 +385,17 @@ const Dashboard: React.FC = () => {
   };
 
   useEffect(() => {
-    const podBaseUrl = getPodBaseUrl();
-    if (podBaseUrl) {
-      loadFolderContent(podBaseUrl);
-      setPath([podBaseUrl]);
+    const initializePod = async () => {
+      const info = await getPodInfo();
+      if (info) {
+        setPodInfo(info);
+        loadFolderContent(info.baseUrl);
+        setPath([info.baseUrl]);
+      }
+    };
+
+    if (session.webId && session.fetch) {
+      initializePod();
     }
   }, [session.webId, session.fetch]);
 
@@ -333,6 +430,7 @@ const Dashboard: React.FC = () => {
   };
 
   const handleCreateItem = async () => {
+    const info = await getPodInfo();
     if (!session.fetch || !currentFolder) {
       setError('No active session or current folder');
       return;
@@ -355,7 +453,7 @@ const Dashboard: React.FC = () => {
       } else {
         const newDataset = createSolidDataset();
         const thing = buildThing(createThing())
-          .addStringNoLocale('https://storage.inrupt.com/33bc24fb-1bb8-4d9e-9139-fdf2486999ee/', createItemForm.content || '')
+          .addStringNoLocale(info!.baseUrl, createItemForm.content || '')
           .build();
 
         console.log(thing)
