@@ -27,10 +27,7 @@ interface FolderContent {
 }
 
 interface FileViewerProps {
-  file: {
-    name: string;
-    url: string;
-  };
+  file: { url: string; name: string };
   onClose: () => void;
   content: string;
 }
@@ -42,56 +39,69 @@ interface CreateItemForm {
 }
 
 interface TurtleData {
-  type?: string;
-  properties: {
-    [key: string]: string | string[];
-  };
+  subject: string;
+  types: string[];
+  properties: { [key: string]: string | string[] | TurtleData[] };
 }
 
-// Função para parser genérico de conteúdo Turtle
-const parseTurtleContent = (content: string): TurtleData | null => {
-  try {
-    const data: TurtleData = {
-      properties: {}
-    };
+interface PropertyRendererProps {
+  name: string;
+  value: string | string[] | TurtleData[];
+}
 
-    // Detecta o tipo (a)
-    const typeMatch = content.match(/a\s+<([^>]+)>/);
-    if (typeMatch) {
-      data.type = typeMatch[1];
+const parseTurtleBlocks = (content: string): TurtleData[] => {
+  const blocks = content.split(/(?<=\.)\s*(?=<)/);
+  const dataArray: TurtleData[] = [];
+
+  blocks.forEach(block => {
+    const lines = block.trim().split(/\n/).map(line => line.trim()).filter(Boolean);
+
+    // Extrair sujeito na 1ª linha
+    const subjectMatch = lines[0].match(/^<([^>]+)>/);
+    if (!subjectMatch) return; // pular blocos inválidos
+    const subject = subjectMatch[1];
+
+    // Extrair tipos (a ...)
+    const typeLine = lines.find(l => l.startsWith('a '));
+    let types: string[] = [];
+    if (typeLine) {
+      // Remove 'a ' e split por ',' ou ';'
+      const typeStr = typeLine.replace(/^a\s+/, '').replace(';', '').trim();
+      types = typeStr.split(/\s*,\s*/);
     }
 
-    // Encontra todas as propriedades e seus valores
-    const propertyPattern = /<([^>]+)>\s*"([^"]+)"|<([^>]+)>\s+([^;\s]+)/g;
-    let match;
+    // Extrair propriedades restantes
+    const properties: { [key: string]: string | string[] } = {};
+    lines.forEach(line => {
+      if (line.startsWith('a ')) return;
+      // Exemplo: schema:name "Projects Name" ;
+      const propMatch = line.match(/([^:]+:[^ ]+)\s+("[^"]+"|<[^>]+>)/);
+      if (propMatch) {
+        const prop = propMatch[1].trim();
+        let val = propMatch[2].trim();
+        // Limpar aspas ou <>
+        if (val.startsWith('"')) val = val.slice(1,-1);
+        if (val.startsWith('<')) val = val.slice(1,-1);
 
-    while ((match = propertyPattern.exec(content)) !== null) {
-      const predicate = match[1] || match[3];
-      const value = match[2] || match[4];
-
-      // Simplifica o nome da propriedade
-      const propertyName = predicate.split('/').pop() || predicate;
-
-      // Se a propriedade já existe, converte para array
-      if (data.properties[propertyName]) {
-        if (Array.isArray(data.properties[propertyName])) {
-          (data.properties[propertyName] as string[]).push(value);
+        if (properties[prop]) {
+          if (Array.isArray(properties[prop])) {
+            properties[prop].push(val);
+          } else {
+            properties[prop] = [properties[prop], val];
+          }
         } else {
-          data.properties[propertyName] = [data.properties[propertyName] as string, value];
+          properties[prop] = val;
         }
-      } else {
-        data.properties[propertyName] = value;
       }
-    }
+    });
 
-    return data;
-  } catch (error) {
-    console.error('Error parsing Turtle data:', error);
-    return null;
-  }
+    dataArray.push({ subject, types, properties });
+  });
+
+  return dataArray;
 };
 
-const PropertyRenderer: React.FC<{ name: string; value: string | string[] }> = ({ name, value }) => {
+const PropertyRenderer: React.FC<PropertyRendererProps> = ({ name, value }) => {
   // Função para verificar se é uma URL
   const isUrl = (str: string) => {
     try {
@@ -114,44 +124,82 @@ const PropertyRenderer: React.FC<{ name: string; value: string | string[] }> = (
     }
   };
 
-  const renderValue = (val: string) => {
-    if (isUrl(val)) {
-      if (val.match(/\.(jpg|jpeg|png|gif)$/i)) {
-        return <img src={val} alt={name} className="property-image" />;
+  // Renderiza o valor (recursivo para objetos TurtleData)
+  const renderValue = (val: string | TurtleData) => {
+    if (typeof val === 'string') {
+      if (isUrl(val)) {
+        if (val.match(/\.(jpg|jpeg|png|gif)$/i)) {
+          return <img src={val} alt={name} className="property-image" />;
+        }
+        return <a href={val} target="_blank" rel="noopener noreferrer">{val}</a>;
       }
-      return <a href={val} target="_blank" rel="noopener noreferrer">{val}</a>;
-    }
 
-    if (val.includes('XMLSchema#dateTime')) {
-      return formatDate(val);
-    }
+      if (val.includes('XMLSchema#dateTime')) {
+        return formatDate(val);
+      }
 
-    return val;
+      return val;
+    } else {
+      // é TurtleData: renderiza tipos e propriedades recursivamente
+      return (
+        <div className="nested-turtle-data" style={{ marginLeft: '1em', borderLeft: '2px solid #ccc', paddingLeft: '1em' }}>
+          {val.types && val.types.length > 0 && (
+            <div><strong>Type{val.types.length > 1 ? 's' : ''}:</strong> {val.types.map(t => t.split('/').pop()).join(', ')}</div>
+          )}
+          {Object.entries(val.properties).map(([k, v]) => (
+            <PropertyRenderer key={k} name={k} value={v} />
+          ))}
+        </div>
+      );
+    }
   };
 
-  return (
-    <div className="property-item">
-      <strong>{name}:</strong>
-      <div className="property-value">
-        {Array.isArray(value) ? (
-          <ul>
+  if (Array.isArray(value)) {
+    // Pode ser array de strings ou array de TurtleData
+    if (value.length > 0 && typeof value[0] === 'object' && 'properties' in value[0]) {
+      // Array de TurtleData
+      return (
+        <div className="property-item">
+          <strong>{name}:</strong>
+          <div className="property-value">
+            {value.map((item, idx) => (
+              <div key={item.subject || idx} className="nested-block" style={{ marginBottom: '0.5em' }}>
+                {renderValue(item)}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    } else {
+      // Array de strings
+      return (
+        <div className="property-item">
+          <strong>{name}:</strong>
+          <ul className="property-value">
             {value.map((val, index) => (
               <li key={index}>{renderValue(val)}</li>
             ))}
           </ul>
-        ) : (
-          renderValue(value)
-        )}
-      </div>
+        </div>
+      );
+    }
+  }
+
+  // valor simples string
+  return (
+    <div className="property-item">
+      <strong>{name}:</strong>
+      <div className="property-value">{renderValue(value)}</div>
     </div>
   );
 };
 
 const FileViewer: React.FC<FileViewerProps> = ({ file, onClose, content }) => {
-  const isImage = file.url.match(/\.(jpg|jpeg|png|gif)$/i);
-  const isTurtle = content.includes('@prefix') || content.includes('schema.org') || content.includes('<http');
+  const isImage = /\.(jpg|jpeg|png|gif)$/i.test(file.url);
+  const isTurtle = content.includes('@prefix') || content.includes('schema:') || content.includes('<http');
 
-  const turtleData = isTurtle ? parseTurtleContent(content) : null;
+  // parseTurtleBlocks retorna TurtleData[]
+  const turtleData = isTurtle ? parseTurtleBlocks(content) : null;
 
   return (
     <div className="file-viewer-overlay">
@@ -165,16 +213,20 @@ const FileViewer: React.FC<FileViewerProps> = ({ file, onClose, content }) => {
             <img src={file.url} alt={file.name} className="full-image" />
           ) : isTurtle && turtleData ? (
             <div className="turtle-data">
-              {turtleData.type && (
-                <div className="data-type">
-                  Type: {turtleData.type.split('/').pop()}
+              {turtleData.map(({ subject, types, properties }, index) => (
+                <div key={subject || index} className="turtle-block" style={{ marginBottom: '1em' }}>
+                  {types && types.length > 0 && (
+                    <div className="data-types">
+                      <strong>Type{types.length > 1 ? 's' : ''}:</strong> {types.map(t => t.split('/').pop()).join(', ')}
+                    </div>
+                  )}
+                  <div className="properties-container">
+                    {Object.entries(properties).map(([key, value]) => (
+                      <PropertyRenderer key={key} name={key} value={value} />
+                    ))}
+                  </div>
                 </div>
-              )}
-              <div className="properties-container">
-                {Object.entries(turtleData.properties).map(([key, value]) => (
-                  <PropertyRenderer key={key} name={key} value={value} />
-                ))}
-              </div>
+              ))}
             </div>
           ) : (
             <pre>{content}</pre>
